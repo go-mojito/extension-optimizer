@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/client9/csstool"
 	"github.com/go-mojito/mojito"
@@ -19,9 +20,15 @@ var (
 
 func CSS(ctx mojito.Context, cache mojito.Cache, logger mojito.Logger, next func() error) error {
 	path := ctx.Request().GetRequest().URL.Path
-	cacheKey := cssCacheKey(path)
-	if !ctx.Request().GetRequest().URL.Query().Has("critical") {
+
+	if !strings.HasSuffix(path, ".css") {
 		return next()
+	}
+
+	critical := ctx.Request().GetRequest().URL.Query().Has("critical")
+	cacheKey := cssCacheKey(path)
+	if critical {
+		cacheKey = cssCacheKey(path + "critical")
 	}
 
 	// Determine if a cached version of the optimized CSS is available
@@ -49,6 +56,21 @@ func CSS(ctx mojito.Context, cache mojito.Cache, logger mojito.Logger, next func
 		originalWriter.WriteHeader(fakeWriter.Status)
 		originalWriter.Write(fakeWriter.Body)
 		return err
+	}
+
+	if !critical {
+		var buf []byte
+		writeBuf := buffer.NewWriter(buf)
+		cssformat := csstool.NewCSSFormat(0, false, nil)
+		cssformat.AlwaysSemicolon = false
+		err := cssformat.Format(buffer.NewReader(fakeWriter.Body), writeBuf)
+		if err != nil {
+			return err
+		}
+		cache.Set(cacheKey, writeBuf.Bytes())
+		originalWriter.Header().Set("content-type", "text/css")
+		originalWriter.Write(writeBuf.Bytes())
+		return nil
 	}
 
 	// No optimized CSS is cached or the cache failed
