@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"regexp"
 
 	"github.com/client9/csstool"
 	"github.com/go-mojito/mojito"
@@ -15,14 +14,13 @@ import (
 )
 
 var (
-	cssRegExp      = regexp.MustCompile(`\.css$`)
 	cacheKeyPrefix = "optimizer_css"
 )
 
 func CSS(ctx mojito.Context, cache mojito.Cache, logger mojito.Logger, next func() error) error {
 	path := ctx.Request().GetRequest().URL.Path
 	cacheKey := cssCacheKey(path)
-	if !cssRegExp.MatchString(path) {
+	if !ctx.Request().GetRequest().URL.Query().Has("critical") {
 		return next()
 	}
 
@@ -32,6 +30,7 @@ func CSS(ctx mojito.Context, cache mojito.Cache, logger mojito.Logger, next func
 		var optimizedCss []byte
 		err := cache.Get(cacheKey, &optimizedCss)
 		if err == nil {
+			ctx.Response().Header().Set("content-type", "text/css")
 			ctx.Response().Write(optimizedCss)
 			return nil
 		}
@@ -60,7 +59,6 @@ func CSS(ctx mojito.Context, cache mojito.Cache, logger mojito.Logger, next func
 		log.Fatalf("FAIL: %s", err)
 	}
 	for _, f := range files {
-		log.Printf("reading %s", f)
 		r, err := os.Open(f)
 		if err != nil {
 			log.Fatalf("FAIL: %s", err)
@@ -75,14 +73,16 @@ func CSS(ctx mojito.Context, cache mojito.Cache, logger mojito.Logger, next func
 	// now get CSS file
 	m := csstool.NewTagMatcher(c.List())
 	cf := csstool.NewCSSFormat(0, false, m)
+	cf.RemoveSourceMap = true
 	var buf []byte
 	writeBuf := buffer.NewWriter(buf)
 	err = cf.Format(buffer.NewReader(fakeWriter.Body), writeBuf)
 	if err != nil {
 		return err
 	}
-	cache.Set(cacheKey, buf)
-	originalWriter.Write(buf)
+	cache.Set(cacheKey, writeBuf.Bytes())
+	originalWriter.Header().Set("content-type", "text/css")
+	originalWriter.Write(writeBuf.Bytes())
 	return nil
 }
 

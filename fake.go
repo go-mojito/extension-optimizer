@@ -17,7 +17,7 @@ func (r *FakeResponse) Header() http.Header {
 	return r.Headers
 }
 func (r *FakeResponse) Write(body []byte) (int, error) {
-	r.Body = body
+	r.Body = append(r.Body, body...)
 	return len(body), nil
 }
 func (r *FakeResponse) WriteHeader(status int) {
